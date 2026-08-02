@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Publicaciones Científicas - UCM Villa Clara</title>
+    <!-- Cargamos Tailwind CSS para un diseño limpio y moderno -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 font-sans">
+    <header class="bg-blue-900 text-white p-6 shadow-md">
+        <div class="container mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-2xl font-bold">Universidad de Ciencias Médicas de Villa Clara</h1>
+                <p class="text-blue-200 text-sm">Portal Estadístico de Publicaciones Científicas</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="ejecutarCosecha()" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded font-semibold text-sm">Cosechar OAI-PMH</button>
+                <a href="/api/exportar/excel" class="bg-amber-500 hover:bg-amber-600 px-4 py-2 rounded font-semibold text-sm text-black">Exportar Excel Control</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto p-6">
+        <!-- Buscador -->
+        <section class="bg-white p-4 rounded-lg shadow mb-6">
+            <input type="text" id="searchInput" onkeyup="cargarPublicaciones()" placeholder="Buscar por autor, publicación o revista..." class="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </section>
+
+        <!-- Tabla de publicaciones -->
+        <section class="bg-white rounded-lg shadow overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-blue-100 text-blue-900 border-b">
+                        <th class="p-3">Autor</th>
+                        <th class="p-3">Categoría / Rol</th>
+                        <th class="p-3">Título</th>
+                        <th class="p-3">Revista</th>
+                        <th class="p-3">Año/Mes</th>
+                        <th class="p-3">Acción</th>
+                    </tr>
+                </thead>
+                <tbody id="tablaBody" class="divide-y divide-gray-200 text-sm">
+                    <!-- Los registros se cargan de forma dinámica aquí -->
+                </tbody>
+            </table>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
