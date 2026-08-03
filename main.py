@@ -15,6 +15,38 @@ app = FastAPI(title="Portal de Publicaciones UCM Villa Clara")
 # Inicializar las tablas de la base de datos al arrancar
 db.init_db()
 
+# Cosechar automáticamente al iniciar si la base de datos está vacía
+db_session = db.SessionLocal()
+try:
+    if db_session.query(db.Publicacion).count() == 0:
+        for nombre, url in REPOSITORIOS_OJS.items():
+            items = cosechar_revista(nombre, url)
+            for item in items:
+                autor = db_session.query(db.Autor).filter(db.Autor.nombre_apellidos == item["autor_nombre"]).first()
+                if not autor:
+                    autor = db.Autor(
+                        nombre_apellidos=item["autor_nombre"], 
+                        categoria_docente="Profesor Auxiliar", 
+                        rol="Profesor"
+                    )
+                    db_session.add(autor)
+                    db_session.commit()
+                    db_session.refresh(autor)
+                pub = db.Publicacion(
+                    titulo=item["titulo"], 
+                    revista=item["revista"], 
+                    anio=item["anio"], 
+                    mes=item["mes"], 
+                    url_pdf=item["url_pdf"], 
+                    autor_id=autor.id
+                )
+                db_session.add(pub)
+        db_session.commit()
+except Exception as e:
+    print(f"Error en cosecha inicial: {e}")
+finally:
+    db_session.close()
+
 # Configurar carpetas de archivos estáticos y plantillas HTML
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
@@ -28,9 +60,9 @@ def get_db():
         session.close()
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def home(request: Request):
-    """Renderiza la página web principal."""
+    """Renderiza la página web principal y soporta pings del servidor."""
     return templates.TemplateResponse(request=request, name="index.html")
 
 
@@ -44,7 +76,6 @@ def listar_publicaciones(q: str = "", db_session: Session = Depends(get_db)):
             (db.Autor.nombre_apellidos.contains(q)) |
             (db.Publicacion.revista.contains(q))
         )
-    # Orden descendente por año (las más recientes primero)
     publicaciones = query.order_by(db.Publicacion.anio.desc()).all()
     
     resultado = []
@@ -108,7 +139,7 @@ def exportar_excel(db_session: Session = Depends(get_db)):
 
 @app.get("/api/ejecutar-cosecha")
 def ejecutar_cosecha(db_session: Session = Depends(get_db)):
-    """Ejecuta el bot OAI-PMH en las revistas locales."""
+    """Ejecuta el bot OAI-PMH manualmente."""
     totales = 0
     for nombre, url in REPOSITORIOS_OJS.items():
         items = cosechar_revista(nombre, url)
