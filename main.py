@@ -31,7 +31,7 @@ def get_db():
 @app.get("/")
 def home(request: Request):
     """Renderiza la página web principal."""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="index.html")
 
 
 @app.get("/api/publicaciones")
