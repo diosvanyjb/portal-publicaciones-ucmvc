@@ -39,7 +39,36 @@ def home(request: Request):
 
 @app.get("/api/publicaciones")
 def listar_publicaciones(q: str = "", db_session: Session = Depends(get_db)):
-    """Obtiene publicaciones ordenadas por año descendente."""
+    """Obtiene publicaciones y, si la DB está vacía, ejecuta una cosecha inicial automática."""
+    total = db_session.query(db.Publicacion).count()
+    
+    # Si la base de datos no tiene registros, cosechar automáticamente
+    if total == 0:
+        for nombre, url in REPOSITORIOS_OJS.items():
+            items = cosechar_revista(nombre, url)
+            for item in items:
+                autor = db_session.query(db.Autor).filter(db.Autor.nombre_apellidos == item["autor_nombre"]).first()
+                if not autor:
+                    autor = db.Autor(
+                        nombre_apellidos=item["autor_nombre"], 
+                        categoria_docente="Profesor Auxiliar", 
+                        rol="Profesor"
+                    )
+                    db_session.add(autor)
+                    db_session.commit()
+                    db_session.refresh(autor)
+                pub = db.Publicacion(
+                    titulo=item["titulo"], 
+                    revista=item["revista"], 
+                    anio=item["anio"], 
+                    mes=item["mes"], 
+                    url_pdf=item["url_pdf"], 
+                    autor_id=autor.id
+                )
+                db_session.add(pub)
+        db_session.commit()
+
+    # Consultar publicaciones filtradas por búsqueda
     query = db_session.query(db.Publicacion).join(db.Autor)
     if q:
         query = query.filter(
