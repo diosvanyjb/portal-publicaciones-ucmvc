@@ -1,3 +1,4 @@
+import os
 import datetime
 import io
 from fastapi import FastAPI, Depends, Request
@@ -6,49 +7,18 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import pandas as pd
+import uvicorn
 
 import database as db
 from oai_harvester import REPOSITORIOS_OJS, cosechar_revista
 
-# 1. Definir la instancia de FastAPI (requerido por Uvicorn)
+# 1. Instancia principal de FastAPI
 app = FastAPI(title="Portal de Publicaciones UCM Villa Clara")
 
-# 2. Inicializar las tablas de la base de datos al arrancar
+# 2. Inicializar tablas de la base de datos al arrancar
 db.init_db()
 
-# 3. Cosechar automáticamente al iniciar si la base de datos está vacía
-db_session = db.SessionLocal()
-try:
-    if db_session.query(db.Publicacion).count() == 0:
-        for nombre, url in REPOSITORIOS_OJS.items():
-            items = cosechar_revista(nombre, url)
-            for item in items:
-                autor = db_session.query(db.Autor).filter(db.Autor.nombre_apellidos == item["autor_nombre"]).first()
-                if not autor:
-                    autor = db.Autor(
-                        nombre_apellidos=item["autor_nombre"], 
-                        categoria_docente="Profesor Auxiliar", 
-                        rol="Profesor"
-                    )
-                    db_session.add(autor)
-                    db_session.commit()
-                    db_session.refresh(autor)
-                pub = db.Publicacion(
-                    titulo=item["titulo"], 
-                    revista=item["revista"], 
-                    anio=item["anio"], 
-                    mes=item["mes"], 
-                    url_pdf=item["url_pdf"], 
-                    autor_id=autor.id
-                )
-                db_session.add(pub)
-        db_session.commit()
-except Exception as e:
-    print(f"Error en cosecha inicial: {e}")
-finally:
-    db_session.close()
-
-# 4. Configurar carpetas de archivos estáticos y plantillas HTML
+# 3. Montar archivos estáticos y plantillas
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
@@ -69,7 +39,7 @@ def home(request: Request):
 
 @app.get("/api/publicaciones")
 def listar_publicaciones(q: str = "", db_session: Session = Depends(get_db)):
-    """Obtiene todas las publicaciones entre 2020 y 2030 ordenadas cronológicamente."""
+    """Obtiene publicaciones ordenadas por año descendente."""
     query = db_session.query(db.Publicacion).join(db.Autor)
     if q:
         query = query.filter(
@@ -140,7 +110,7 @@ def exportar_excel(db_session: Session = Depends(get_db)):
 
 @app.get("/api/ejecutar-cosecha")
 def ejecutar_cosecha(db_session: Session = Depends(get_db)):
-    """Ejecuta el bot OAI-PMH manualmente."""
+    """Ejecuta el bot OAI-PMH bajo demanda."""
     totales = 0
     for nombre, url in REPOSITORIOS_OJS.items():
         items = cosechar_revista(nombre, url)
@@ -168,3 +138,8 @@ def ejecutar_cosecha(db_session: Session = Depends(get_db)):
             totales += 1
     db_session.commit()
     return {"status": "Completado", "registros_cosechados": totales}
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
