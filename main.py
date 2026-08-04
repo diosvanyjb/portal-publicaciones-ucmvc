@@ -39,36 +39,7 @@ def home(request: Request):
 
 @app.get("/api/publicaciones")
 def listar_publicaciones(q: str = "", db_session: Session = Depends(get_db)):
-    """Obtiene publicaciones y, si la DB está vacía, ejecuta una cosecha inicial automática."""
-    total = db_session.query(db.Publicacion).count()
-    
-    # Si la base de datos no tiene registros, cosechar automáticamente
-    if total == 0:
-        for nombre, url in REPOSITORIOS_OJS.items():
-            items = cosechar_revista(nombre, url)
-            for item in items:
-                autor = db_session.query(db.Autor).filter(db.Autor.nombre_apellidos == item["autor_nombre"]).first()
-                if not autor:
-                    autor = db.Autor(
-                        nombre_apellidos=item["autor_nombre"], 
-                        categoria_docente="Profesor Auxiliar", 
-                        rol="Profesor"
-                    )
-                    db_session.add(autor)
-                    db_session.commit()
-                    db_session.refresh(autor)
-                pub = db.Publicacion(
-                    titulo=item["titulo"], 
-                    revista=item["revista"], 
-                    anio=item["anio"], 
-                    mes=item["mes"], 
-                    url_pdf=item["url_pdf"], 
-                    autor_id=autor.id
-                )
-                db_session.add(pub)
-        db_session.commit()
-
-    # Consultar publicaciones filtradas por búsqueda
+    """Obtiene publicaciones filtradas por búsqueda y ordenadas cronológicamente."""
     query = db_session.query(db.Publicacion).join(db.Autor)
     if q:
         query = query.filter(
@@ -139,34 +110,62 @@ def exportar_excel(db_session: Session = Depends(get_db)):
 
 @app.get("/api/ejecutar-cosecha")
 def ejecutar_cosecha(db_session: Session = Depends(get_db)):
-    """Ejecuta el bot OAI-PMH bajo demanda."""
+    """Ejecuta el bot OAI-PMH de forma segura y sin bloqueos de base de datos."""
     totales = 0
+    errores = []
+
     for nombre, url in REPOSITORIOS_OJS.items():
-        items = cosechar_revista(nombre, url)
-        for item in items:
-            autor = db_session.query(db.Autor).filter(db.Autor.nombre_apellidos == item["autor_nombre"]).first()
-            if not autor:
-                autor = db.Autor(
-                    nombre_apellidos=item["autor_nombre"], 
-                    categoria_docente="Profesor Auxiliar", 
-                    rol="Profesor"
+        try:
+            items = cosechar_revista(nombre, url)
+            for item in items:
+                # Verificar si la publicación ya existe por título para evitar duplicados
+                pub_existe = db_session.query(db.Publicacion).filter(
+                    db.Publicacion.titulo == item["titulo"]
+                ).first()
+
+                if pub_existe:
+                    # Si ya existe, actualizamos los datos corregidos (año/mes/pdf)
+                    pub_existe.anio = item["anio"]
+                    pub_existe.mes = item["mes"]
+                    pub_existe.url_pdf = item["url_pdf"]
+                    continue
+
+                # Buscar o crear autor
+                autor = db_session.query(db.Autor).filter(
+                    db.Autor.nombre_apellidos == item["autor_nombre"]
+                ).first()
+
+                if not autor:
+                    autor = db.Autor(
+                        nombre_apellidos=item["autor_nombre"],
+                        categoria_docente="Profesor Auxiliar",
+                        rol="Profesor"
+                    )
+                    db_session.add(autor)
+                    db_session.flush()  # Asigna un ID al autor inmediatamente
+
+                pub = db.Publicacion(
+                    titulo=item["titulo"],
+                    revista=item["revista"],
+                    anio=item["anio"],
+                    mes=item["mes"],
+                    url_pdf=item["url_pdf"],
+                    autor_id=autor.id
                 )
-                db_session.add(autor)
-                db_session.commit()
-                db_session.refresh(autor)
-                
-            pub = db.Publicacion(
-                titulo=item["titulo"],
-                revista=item["revista"],
-                anio=item["anio"],
-                mes=item["mes"],
-                url_pdf=item["url_pdf"],
-                autor_id=autor.id
-            )
-            db_session.add(pub)
-            totales += 1
-    db_session.commit()
-    return {"status": "Completado", "registros_cosechados": totales}
+                db_session.add(pub)
+                totales += 1
+
+            db_session.commit()
+        except Exception as e:
+            db_session.rollback()
+            print(f"Error procesando {nombre}: {e}")
+            errores.append(f"{nombre}: {str(e)}")
+
+    return {
+        "status": "Completado",
+        "registros_cosechados": totales,
+        "errores": errores
+    }
 
 
 if __name__ == "__main__":
